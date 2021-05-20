@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/360EntSecGroup-Skylar/excelize/v2"
 )
 
 type Ticker struct {
@@ -401,7 +403,6 @@ func main() {
 	banks := getBanks()
 	var keys []KeyFinancialMetrics
 	for _, bank := range banks {
-		fmt.Println("bank", bank.Ticker)
 		var key KeyFinancialMetrics
 
 		detail := getStockDetails(bank.Ticker)
@@ -448,6 +449,41 @@ func main() {
 		keys = append(keys, key)
 	}
 
-	js, _ := json.MarshalIndent(keys, "", " ")
-	fmt.Println("js", string(js))
+	categories := map[string]string{
+		"A1": "Ticker", "B1": "LTP", "C1": "%Fair", "D1": "P/E", "E1": "EPS", "F1": "FairValue",
+		"G1": "BookValue", "H1": "ROA", "I1": "ROE", "J1": "NPL", "K1": "TotalShare", "L1": "Reserve",
+		"M1": "MarketCap", "N1": "DisProfit", "O1": "paidUp", "P1": "ExepectedDividend",
+	}
+	var excelVals []map[string]interface{}
+
+	for k, v := range keys {
+		excelVal := map[string]interface{}{
+			getColumn("A", k): v.Ticker, getColumn("B", k): v.LTP, getColumn("C", k): v.DiversionFromFair,
+			getColumn("D", k): v.PE, getColumn("E", k): v.Eps, getColumn("F", k): v.FairValue, getColumn("G", k): v.Bvps,
+			getColumn("H", k): v.Roa, getColumn("I", k): v.Roe, getColumn("J", k): v.NPL,
+			getColumn("K", k): v.Listedshares, getColumn("L", k): v.Reserves, getColumn("M", k): v.Mktcap,
+			getColumn("N", k): v.DistributableProfit, getColumn("O", k): v.PaidUpCapital, getColumn("P", k): v.DividendCapacity,
+		}
+
+		excelVals = append(excelVals, excelVal)
+	}
+	f := excelize.NewFile()
+	for k, v := range categories {
+		f.SetCellValue("Sheet1", k, v)
+	}
+
+	for _, vals := range excelVals {
+		for k, v := range vals {
+			f.SetCellValue("Sheet1", k, v)
+		}
+	}
+
+	if err := f.SaveAs("Banking.xlsx"); err != nil {
+		fmt.Println(err)
+	}
+
+}
+
+func getColumn(column string, num int) string {
+	return fmt.Sprintf("%s%d", column, num+2)
 }
