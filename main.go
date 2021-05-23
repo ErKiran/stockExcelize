@@ -133,22 +133,25 @@ type Financial struct {
 }
 
 type KeyFinancialMetrics struct {
-	Ticker              string  `json:"ticker"`
-	LTP                 float64 `json:"ltp"`
-	DiversionFromFair   float64 `json:"divesionFromFair"`
-	PE                  float64 `json:"pe"`
-	Eps                 float64 `json:"eps"`
-	FairValue           float64 `json:"fairValue"`
-	Bvps                float64 `json:"bvps"`
-	Roa                 float64 `json:"roa"`
-	Roe                 float64 `json:"roe"`
-	NPL                 float64 `json:"npl"`
-	Listedshares        float64 `json:"listedShares"`
-	Reserves            float64 `json:"reserves"`
-	Mktcap              float64 `json:"mktCap"`
-	DistributableProfit float64 `json:"distributableProfit"`
-	PaidUpCapital       float64 `json:"paidUpCapital"`
-	DividendCapacity    float64 `json:"dividendCapacity"`
+	Ticker                     string  `json:"ticker"`
+	LTP                        float64 `json:"ltp"`
+	DiversionFromFair          float64 `json:"divesionFromFair"`
+	PE                         float64 `json:"pe"`
+	Eps                        float64 `json:"eps"`
+	FairValue                  float64 `json:"fairValue"`
+	Bvps                       float64 `json:"bvps"`
+	Pbv                        float64 `json:"pbv"`
+	Roa                        float64 `json:"roa"`
+	Roe                        float64 `json:"roe"`
+	NPL                        float64 `json:"npl"`
+	Listedshares               float64 `json:"listedShares"`
+	Reserves                   float64 `json:"reserves"`
+	Mktcap                     float64 `json:"mktCap"`
+	DistributableProfit        float64 `json:"distributableProfit"`
+	DistibutableProfitPerShare float64 `json:"distributableProfitPerShare"`
+	PaidUpCapital              float64 `json:"paidUpCapital"`
+	DividendCapacity           float64 `json:"dividendCapacity"`
+	RetentionRatio             float64 `json:"retentionRatio"`
 }
 
 type BalanceSheet struct {
@@ -376,13 +379,13 @@ func getStockDetails(ticker string) StockDetails {
 	return detail
 }
 
-func getBanks() []Ticker {
+func getSectorStock(sector string) []Ticker {
 	tickers := getStocks()
 
 	var ticks []Ticker
 
 	for _, tick := range tickers.Message {
-		if tick.Sector == "Commercial Banks" {
+		if tick.Sector == sector {
 			if !strings.Contains(tick.Companyname, "Promoter") {
 				if tick.Ticker != "JBNL" {
 					ticks = append(ticks, Ticker{Ticker: tick.Ticker, Companyname: tick.Companyname, Sector: tick.Sector})
@@ -400,7 +403,8 @@ func CalculateGrahamValue(eps, bookValue float64) float64 {
 }
 
 func main() {
-	banks := getBanks()
+	sector := "Microcredit"
+	banks := getSectorStock(sector)
 	var keys []KeyFinancialMetrics
 	for _, bank := range banks {
 		var key KeyFinancialMetrics
@@ -411,24 +415,25 @@ func main() {
 		incomeStatement := getIncomeStatement(bank.Ticker)
 		price := getLatestPrice(bank.Ticker)
 
-		key.Eps = detail.Message.Summary.Epsdiluted
-		key.PE = detail.Message.Summary.Pediluted
+		key.Eps = toFixed(detail.Message.Summary.Epsdiluted, 2)
+		key.PE = toFixed(detail.Message.Summary.Pediluted, 2)
 		key.LTP = detail.Message.Summary.Open
-		key.Bvps = detail.Message.Summary.Bvps
+		key.Bvps = toFixed(detail.Message.Summary.Bvps, 2)
 		key.Ticker = detail.Message.Keyfinancial.Ticker
 		key.Listedshares = detail.Message.Summary.Listedshares
 		key.LTP = price.Message.Latestprice
 		key.Mktcap = detail.Message.Summary.Mktcap
+		key.Pbv = toFixed(key.LTP/key.Bvps, 2)
 
 		for _, quarter := range detail.Message.Keyfinancial.Data {
 			if quarter.Type == "CURRENT" {
-				key.Roa = quarter.Roa * 100
-				key.Roe = quarter.Roe * 100
+				key.Roa = toFixed(quarter.Roa*100, 2)
+				key.Roe = toFixed(quarter.Roe*100, 2)
 			}
 		}
 
 		if len(financial.Message.Data) != 0 {
-			key.NPL = financial.Message.Data[0].Nonperformingloannpltototalloan * 100
+			key.NPL = toFixed(financial.Message.Data[0].Nonperformingloannpltototalloan*100, 2)
 		}
 
 		if len(balancesheet.Message.Data) != 0 {
@@ -438,13 +443,15 @@ func main() {
 
 		if len(incomeStatement.Message.Data) != 0 {
 			key.DistributableProfit = float64(incomeStatement.Message.Data[0].Freeprofit)
+			key.DistibutableProfitPerShare = toFixed((key.DistributableProfit/key.Listedshares)*100, 2)
 		}
 
 		if len(balancesheet.Message.Data) != 0 && len(incomeStatement.Message.Data) != 0 {
-			key.DividendCapacity = (key.DistributableProfit / key.PaidUpCapital) * 100
+			key.DividendCapacity = toFixed((key.DistributableProfit/key.PaidUpCapital)*100, 2)
+			key.RetentionRatio = toFixed((balancesheet.Message.Data[0].Retainedearnings/incomeStatement.Message.Data[0].Netopincome)*100, 2)
 		}
-		key.FairValue = CalculateGrahamValue(key.Eps, key.Bvps)
-		key.DiversionFromFair = ((key.LTP - key.FairValue) / (key.FairValue)) * 100
+		key.FairValue = toFixed(CalculateGrahamValue(key.Eps, key.Bvps), 2)
+		key.DiversionFromFair = toFixed(((key.LTP-key.FairValue)/(key.FairValue))*100, 2)
 
 		keys = append(keys, key)
 	}
@@ -452,7 +459,8 @@ func main() {
 	categories := map[string]string{
 		"A1": "Ticker", "B1": "LTP", "C1": "%Fair", "D1": "P/E", "E1": "EPS", "F1": "FairValue",
 		"G1": "BookValue", "H1": "ROA", "I1": "ROE", "J1": "NPL", "K1": "TotalShare", "L1": "Reserve",
-		"M1": "MarketCap", "N1": "DisProfit", "O1": "paidUp", "P1": "ExepectedDividend",
+		"M1": "MarketCap", "N1": "DisProfit", "O1": "paidUp", "P1": "ExepectedDividend", "Q1": "PBV",
+		"R1": "RetentionRatio", "S1": "Profit/Share",
 	}
 	var excelVals []map[string]interface{}
 
@@ -463,9 +471,11 @@ func main() {
 			getColumn("H", k): v.Roa, getColumn("I", k): v.Roe, getColumn("J", k): v.NPL,
 			getColumn("K", k): v.Listedshares, getColumn("L", k): v.Reserves, getColumn("M", k): v.Mktcap,
 			getColumn("N", k): v.DistributableProfit, getColumn("O", k): v.PaidUpCapital, getColumn("P", k): v.DividendCapacity,
+			getColumn("Q", k): v.Pbv, getColumn("R", k): v.RetentionRatio, getColumn("S", k): v.DistibutableProfitPerShare,
 		}
-
-		excelVals = append(excelVals, excelVal)
+		if v.Ticker != "" {
+			excelVals = append(excelVals, excelVal)
+		}
 	}
 	f := excelize.NewFile()
 	for k, v := range categories {
@@ -478,7 +488,7 @@ func main() {
 		}
 	}
 
-	if err := f.SaveAs("Banking.xlsx"); err != nil {
+	if err := f.SaveAs(fmt.Sprintf("%s.xlsx", sector)); err != nil {
 		fmt.Println(err)
 	}
 
@@ -486,4 +496,13 @@ func main() {
 
 func getColumn(column string, num int) string {
 	return fmt.Sprintf("%s%d", column, num+2)
+}
+
+func round(num float64) int {
+	return int(num + math.Copysign(0.5, num))
+}
+
+func toFixed(num float64, precision int) float64 {
+	output := math.Pow(10, float64(precision))
+	return float64(round(num*output)) / output
 }
